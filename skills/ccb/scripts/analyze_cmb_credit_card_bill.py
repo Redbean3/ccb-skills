@@ -435,6 +435,96 @@ def write_daily_svg(daily_totals: dict[date, Decimal], path: Path) -> None:
     path.write_text("\n".join(svg), encoding="utf-8")
 
 
+def build_interactive_daily_svg(daily_totals: dict[date, Decimal]) -> str:
+    if not daily_totals:
+        return '<div class="empty-chart">无每日消费数据</div>'
+
+    width, height = 1160, 560
+    margin_left, margin_right = 78, 42
+    margin_top, margin_bottom = 90, 92
+    chart_width = width - margin_left - margin_right
+    chart_height = height - margin_top - margin_bottom
+    max_amount = max(daily_totals.values(), default=Decimal("0"))
+    y_max = max(Decimal("10"), (max_amount * Decimal("1.15")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    items = list(daily_totals.items())
+    count = len(items)
+    step = chart_width / max(count, 1)
+    bar_width = min(22, step * 0.68)
+
+    def x_at(i: int) -> float:
+        return margin_left + step * i + step / 2
+
+    def y_at(amount: Decimal) -> float:
+        return margin_top + chart_height - (float(amount) / float(y_max)) * chart_height
+
+    svg: list[str] = [
+        f'<svg class="daily-chart-svg" xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="每日消费金额，点击日期查看明细">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        '<text x="40" y="52" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#1f2933">每日消费金额</text>',
+        '<text x="40" y="80" font-size="16" font-family="Arial, sans-serif" fill="#52606d">点击柱形或趋势点查看当日开支详情</text>',
+    ]
+
+    for tick in range(6):
+        amount = y_max * Decimal(tick) / Decimal(5)
+        y = y_at(amount)
+        svg.append(f'<line x1="{margin_left}" y1="{y:.2f}" x2="{width - margin_right}" y2="{y:.2f}" stroke="#e4e7eb" stroke-width="1"/>')
+        svg.append(f'<text x="{margin_left - 12}" y="{y + 5:.2f}" font-size="12" font-family="Arial, sans-serif" text-anchor="end" fill="#52606d">{money(amount)}</text>')
+
+    line_points: list[tuple[str, str, date, Decimal]] = []
+    for index, (day, amount) in enumerate(items):
+        x = x_at(index)
+        y = y_at(amount)
+        bar_height = margin_top + chart_height - y
+        label = f"{day.strftime('%m/%d')} {html_money(amount)}"
+        data_attrs = (
+            f'class="daily-bar" data-day="{day.isoformat()}" tabindex="0" role="button" '
+            f'aria-label="{escape(label, quote=True)}"'
+            if amount
+            else 'class="daily-bar empty"'
+        )
+        svg.append(
+            f'<rect {data_attrs} x="{x - bar_width / 2:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_height:.2f}" '
+            'fill="#4E79A7" opacity="0.82">'
+            f"<title>{escape(label)}</title></rect>"
+        )
+        line_points.append((f"{x:.2f}", f"{y:.2f}", day, amount))
+        if index % 2 == 0 or index == count - 1:
+            svg.append(
+                f'<text x="{x:.2f}" y="{height - 52}" font-size="12" font-family="Arial, sans-serif" '
+                f'text-anchor="middle" fill="#52606d" transform="rotate(-35 {x:.2f} {height - 52})">{day.strftime("%m/%d")}</text>'
+            )
+
+    if line_points:
+        svg.append(
+            f'<polyline points="{" ".join(f"{x},{y}" for x, y, _, _ in line_points)}" fill="none" stroke="#E15759" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'
+        )
+        for x, y, day, amount in line_points:
+            label = f"{day.strftime('%m/%d')} {html_money(amount)}"
+            data_attrs = (
+                f'class="daily-dot" data-day="{day.isoformat()}" tabindex="0" role="button" '
+                f'aria-label="{escape(label, quote=True)}"'
+                if amount
+                else 'class="daily-dot empty"'
+            )
+            svg.append(
+                f'<circle {data_attrs} cx="{x}" cy="{y}" r="3.2" fill="#E15759" stroke="#ffffff" stroke-width="1.5">'
+                f"<title>{escape(label)}</title></circle>"
+            )
+
+    svg.extend(
+        [
+            f'<line x1="{margin_left}" y1="{margin_top + chart_height}" x2="{width - margin_right}" y2="{margin_top + chart_height}" stroke="#9aa5b1"/>',
+            f'<line x1="{margin_left}" y1="{margin_top}" x2="{margin_left}" y2="{margin_top + chart_height}" stroke="#9aa5b1"/>',
+            '<rect x="920" y="36" width="18" height="12" fill="#4E79A7" opacity="0.82"/>',
+            '<text x="945" y="47" font-size="14" font-family="Arial, sans-serif" fill="#52606d">柱：日消费额</text>',
+            '<line x1="920" y1="70" x2="938" y2="70" stroke="#E15759" stroke-width="3"/>',
+            '<text x="945" y="75" font-size="14" font-family="Arial, sans-serif" fill="#52606d">线：趋势</text>',
+            "</svg>",
+        ]
+    )
+    return "\n".join(svg)
+
+
 def write_csv(transactions: list[Transaction], path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.writer(handle)
@@ -646,7 +736,7 @@ def write_interactive_html(
             continue
         width = float(amount / max_daily * Decimal("100")) if max_daily else 0
         daily_rows.append(
-            "<tr>"
+            f'<tr class="daily-row" data-day="{day.isoformat()}" tabindex="0">'
             f'<td data-value="{day.isoformat()}">{day.strftime("%m/%d")}</td>'
             f'<td data-value="{amount}">{html_money(amount)}</td>'
             f'<td><span class="bar" style="width:{width:.1f}%"></span></td>'
@@ -689,12 +779,36 @@ def write_interactive_html(
         }
         for category, amount in top_categories
     }
+    daily_detail_data = {
+        day.isoformat(): {
+            "label": day.strftime("%m/%d"),
+            "amount": html_money(amount),
+            "count": sum(1 for tx in cleaned if tx.trans_date == day),
+            "rows": [
+                {
+                    "merchant": tx.description,
+                    "category": tx.category,
+                    "amount": html_money(tx.amount),
+                    "amountValue": float(tx.amount),
+                }
+                for tx in sorted(
+                    (tx for tx in cleaned if tx.trans_date == day),
+                    key=lambda item: item.amount,
+                    reverse=True,
+                )
+            ],
+        }
+        for day, amount in daily_totals.items()
+        if amount
+    }
     tab_buttons = "\n".join(
         f'<button type="button" class="tab" data-category="{escape(category, quote=True)}">'
         f"{escape(category)}<span>{html_money(amount)}</span></button>"
         for category, amount in top_categories
     )
     top_day_label = top_day.strftime("%m/%d") if top_day else "-"
+    default_day = top_day.isoformat() if top_day else next(iter(daily_detail_data), "")
+    interactive_daily_svg = build_interactive_daily_svg(daily_totals)
 
     html = f"""<!doctype html>
 <html lang="zh-CN">
@@ -724,7 +838,14 @@ def write_interactive_html(
     .label {{ color:var(--muted); font-size:13px; }} .value {{ margin-top:10px; font-size:25px; font-weight:750; }} .sub {{ margin-top:5px; color:var(--muted); font-size:13px; }}
     .charts {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:18px; }}
     .chart {{ border:1px solid var(--line); border-radius:8px; background:#fff; overflow:auto; min-height:360px; }}
-    .chart img {{ display:block; width:100%; min-width:520px; height:auto; }}
+    .chart img, .chart svg {{ display:block; width:100%; min-width:520px; height:auto; }}
+    .daily-bar, .daily-dot, .daily-row {{ cursor:pointer; }}
+    .daily-bar:not(.empty):hover, .daily-bar.active {{ fill:#2f855a; opacity:1; }}
+    .daily-dot:not(.empty):hover, .daily-dot.active {{ fill:#2f855a; }}
+    .daily-row:hover td, .daily-row.active td {{ background:#edf7fc; }}
+    .daily-detail-panel {{ margin-top:16px; border:1px solid var(--line); border-radius:8px; background:#fbfcfd; padding:16px; }}
+    .empty-state {{ color:var(--muted); padding:12px; }}
+    .empty-chart {{ min-width:520px; padding:32px; color:var(--muted); }}
     .wrap {{ overflow-x:auto; border:1px solid var(--line); border-radius:8px; }}
     table {{ width:100%; border-collapse:collapse; font-size:14px; }}
     th, td {{ border-bottom:1px solid #e6eaed; padding:10px 12px; text-align:left; vertical-align:top; }}
@@ -755,26 +876,33 @@ def write_interactive_html(
       <div class="metric net"><div class="label">分类分析消费合计</div><div class="value">{html_money(cleaned_total)}</div><div class="sub">{len(cleaned)} 笔有效消费</div></div>
       <div class="metric day"><div class="label">单日消费最高</div><div class="value">{top_day_label}</div><div class="sub">{html_money(top_day_amount)}</div></div>
     </div></div></section>
-    <section id="charts"><div class="head"><h2>图表</h2><p class="note">分类饼图与每日消费趋势图。</p></div><div class="body"><div class="charts"><div class="chart"><img src="category_pie.svg" alt="本期消费分类饼图"></div><div class="chart"><img src="daily_spending.svg" alt="每日消费金额图"></div></div></div></section>
+    <section id="charts"><div class="head"><h2>图表</h2><p class="note">分类饼图与每日消费趋势图。点击每日消费图中的柱形或趋势点查看当日明细。</p></div><div class="body"><div class="charts"><div class="chart"><img src="category_pie.svg" alt="本期消费分类饼图"></div><div class="chart">{interactive_daily_svg}</div></div><div class="daily-detail-panel"><div class="toolbar"><div><p class="detail-title" id="daily-detail-title">当日开支详情</p><div class="detail-meta" id="daily-detail-meta">点击图表中的日期查看明细</div></div></div><div class="wrap"><table class="sortable" id="daily-detail-table"><thead><tr><th data-sort="text">商户</th><th data-sort="text">分类</th><th class="num" data-sort="number">金额</th></tr></thead><tbody></tbody></table><div class="empty-state" id="daily-detail-empty">暂无当日消费明细。</div></div></div></div></section>
     <section id="categories"><div class="head"><h2>消费分类</h2><p class="note">点击表头可排序。</p></div><div class="body"><div class="wrap"><table class="sortable"><thead><tr><th data-sort="text">分类</th><th class="num" data-sort="number">金额</th><th class="num" data-sort="number">占比</th><th class="num" data-sort="number">笔数</th></tr></thead><tbody>{"".join(category_rows)}</tbody></table></div></div></section>
     <section id="top-details"><div class="head"><h2>金额前{len(top_categories)}类目明细</h2><p class="note">只展示剔除可匹配退款后的有效消费。</p></div><div class="body"><div class="tabs">{tab_buttons}</div><div class="toolbar"><div><p class="detail-title" id="detail-title"></p><div class="detail-meta" id="detail-meta"></div></div><input class="search" id="detail-search" type="search" placeholder="搜索商户或日期"></div><div class="wrap"><table class="sortable" id="detail-table"><thead><tr><th data-sort="text">交易日</th><th data-sort="text">商户</th><th class="num" data-sort="number">金额</th></tr></thead><tbody></tbody></table></div></div></section>
-    <section id="daily"><div class="head"><h2>每日消费</h2><p class="note">按交易日汇总，右侧条形用于比较单日金额。</p></div><div class="body"><div class="wrap"><table class="sortable"><thead><tr><th data-sort="text">日期</th><th class="num" data-sort="number">金额</th><th>强度</th></tr></thead><tbody>{"".join(daily_rows)}</tbody></table></div></div></section>
+    <section id="daily"><div class="head"><h2>每日消费</h2><p class="note">按交易日汇总，右侧条形用于比较单日金额；点击日期行也可筛选当日明细。</p></div><div class="body"><div class="wrap"><table class="sortable"><thead><tr><th data-sort="text">日期</th><th class="num" data-sort="number">金额</th><th>强度</th></tr></thead><tbody>{"".join(daily_rows)}</tbody></table></div></div></section>
     <section id="refunds"><div class="head"><h2>退款处理</h2><p class="note">已匹配退款从消费分类和图表中剔除；未匹配退款仅用于净额校验。</p></div><div class="body"><p class="callout">若再扣除未匹配退款 {html_money(unmatched_refund_total)}，本期净账单口径金额为 {html_money(net_after_unmatched_refunds)}。</p><details open><summary>已剔除的退款对应账目（{len(matched)} 笔）</summary><div class="details-body wrap"><table class="sortable"><thead><tr><th data-sort="text">退款交易日</th><th class="num" data-sort="number">退款金额</th><th data-sort="text">被剔除交易日</th><th data-sort="text">被剔除商户</th></tr></thead><tbody>{"".join(matched_rows)}</tbody></table></div></details><details><summary>未匹配到本期正向交易的退款（{len(unmatched_refunds)} 笔）</summary><div class="details-body wrap"><table class="sortable"><thead><tr><th data-sort="text">退款交易日</th><th data-sort="text">摘要</th><th class="num" data-sort="number">金额</th></tr></thead><tbody>{"".join(unmatched_rows) if unmatched_rows else '<tr><td colspan="3">无</td></tr>'}</tbody></table></div></details></div></section>
     <section id="rules"><div class="head"><h2>分析口径与文件</h2><p class="note">分类规则和导出文件。</p></div><div class="body"><ul><li>还款记录不计入消费分析。</li><li>正向消费与同金额、交易日不晚于退款日的退款成对剔除。</li><li>未匹配退款不归入任何消费分类，仅作为账单调整。</li><li>出行交通包含滴滴顺风车、滴滴出行、高德打车、交通、一卡通等。</li><li>食堂单独成类，其他餐饮、食品、商超归入其他饮食/食品商超。</li></ul><div class="links"><a href="report.md">Markdown 报告</a><a href="transactions_cleaned.csv">清洗后消费明细</a><a href="transactions_parsed.csv">完整解析明细</a></div></div></section>
   </main>
   <script>
     const DETAIL_DATA = {script_json(detail_data)};
+    const DAILY_DATA = {script_json(daily_detail_data)};
     const DEFAULT_CATEGORY = {script_json(top_categories[0][0] if top_categories else "")};
+    const DEFAULT_DAY = {script_json(default_day)};
     let currentCategory = DEFAULT_CATEGORY;
     function sortValue(cell, type) {{ const raw = cell.dataset.value ?? cell.textContent.trim(); return type === "number" ? Number(raw) : raw; }}
     function sortTable(table, index, type) {{ const tbody = table.tBodies[0]; const rows = Array.from(tbody.rows); const current = table.dataset.sortIndex === String(index) ? table.dataset.sortDir : "desc"; const dir = current === "asc" ? "desc" : "asc"; rows.sort((a,b) => {{ const av = sortValue(a.cells[index], type); const bv = sortValue(b.cells[index], type); if (type === "number") return dir === "asc" ? av - bv : bv - av; return dir === "asc" ? String(av).localeCompare(String(bv), "zh-Hans-CN") : String(bv).localeCompare(String(av), "zh-Hans-CN"); }}); rows.forEach(row => tbody.appendChild(row)); table.dataset.sortIndex = String(index); table.dataset.sortDir = dir; }}
     function bindSorting(root = document) {{ root.querySelectorAll("th[data-sort]").forEach(th => {{ if (th.dataset.bound) return; th.dataset.bound = "true"; th.addEventListener("click", () => sortTable(th.closest("table"), th.cellIndex, th.dataset.sort)); }}); }}
     function renderDetails(category) {{ const data = DETAIL_DATA[category]; const tbody = document.querySelector("#detail-table tbody"); tbody.innerHTML = ""; if (!data) return; document.querySelector("#detail-title").textContent = category; document.querySelector("#detail-meta").textContent = `${{data.amount}} · ${{data.count}} 笔`; const term = document.querySelector("#detail-search").value.trim().toLowerCase(); data.rows.filter(row => !term || `${{row.date}} ${{row.merchant}}`.toLowerCase().includes(term)).forEach(row => {{ const tr = document.createElement("tr"); const dateCell = document.createElement("td"); const merchantCell = document.createElement("td"); const amountCell = document.createElement("td"); dateCell.dataset.value = row.dateValue; amountCell.dataset.value = row.amountValue; dateCell.textContent = row.date; merchantCell.textContent = row.merchant; amountCell.textContent = row.amount; tr.append(dateCell, merchantCell, amountCell); tbody.appendChild(tr); }}); bindSorting(document.querySelector("#detail-table")); }}
+    function activateDay(dayKey) {{ document.querySelectorAll("[data-day]").forEach(item => item.classList.toggle("active", item.dataset.day === dayKey)); }}
+    function renderDaily(dayKey) {{ const data = DAILY_DATA[dayKey]; const tbody = document.querySelector("#daily-detail-table tbody"); const empty = document.querySelector("#daily-detail-empty"); tbody.innerHTML = ""; activateDay(dayKey); if (!data) {{ document.querySelector("#daily-detail-title").textContent = "当日开支详情"; document.querySelector("#daily-detail-meta").textContent = "暂无当日消费明细"; empty.hidden = false; return; }} document.querySelector("#daily-detail-title").textContent = `${{data.label}} 开支详情`; document.querySelector("#daily-detail-meta").textContent = `${{data.amount}} · ${{data.count}} 笔`; empty.hidden = data.rows.length > 0; data.rows.forEach(row => {{ const tr = document.createElement("tr"); const merchantCell = document.createElement("td"); const categoryCell = document.createElement("td"); const amountCell = document.createElement("td"); amountCell.dataset.value = row.amountValue; merchantCell.textContent = row.merchant; categoryCell.textContent = row.category; amountCell.textContent = row.amount; tr.append(merchantCell, categoryCell, amountCell); tbody.appendChild(tr); }}); bindSorting(document.querySelector("#daily-detail-table")); }}
+    function bindDailySelection() {{ document.querySelectorAll("[data-day]").forEach(item => {{ if (item.dataset.dayBound) return; item.dataset.dayBound = "true"; item.addEventListener("click", () => renderDaily(item.dataset.day)); item.addEventListener("keydown", event => {{ if (event.key === "Enter" || event.key === " ") {{ event.preventDefault(); renderDaily(item.dataset.day); }} }}); }}); }}
     document.querySelectorAll("[data-category]").forEach(button => {{ button.addEventListener("click", () => {{ currentCategory = button.dataset.category; document.querySelectorAll("[data-category]").forEach(item => item.classList.toggle("active", item === button)); document.querySelector("#detail-search").value = ""; renderDetails(currentCategory); }}); }});
     document.querySelector("#detail-search")?.addEventListener("input", () => renderDetails(currentCategory));
+    bindDailySelection();
     bindSorting();
     const defaultButton = Array.from(document.querySelectorAll("[data-category]")).find(button => button.dataset.category === DEFAULT_CATEGORY);
     if (defaultButton) defaultButton.click();
+    if (DEFAULT_DAY) renderDaily(DEFAULT_DAY);
   </script>
 </body>
 </html>
