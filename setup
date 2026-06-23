@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+from pathlib import Path
+
+
+SKILL_NAME = "credit-card-bill-analysis"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def source_skill_dir() -> Path:
+    return repo_root() / "skills" / SKILL_NAME
+
+
+def default_codex_skill_dir() -> Path:
+    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+    return codex_home / "skills" / SKILL_NAME
+
+
+def default_claude_skill_dir() -> Path:
+    claude_home = Path(os.environ.get("CLAUDE_HOME", Path.home() / ".claude")).expanduser()
+    return claude_home / "skills" / SKILL_NAME
+
+
+def prompt_choice() -> set[str]:
+    print("Which coding agents do you want to install this skill on?")
+    print("  1) Codex")
+    print("  2) Claude Code")
+    print("  3) Both")
+    print("  4) Cancel")
+    answer = input("Select 1-4 [3]: ").strip() or "3"
+    if answer == "1":
+        return {"codex"}
+    if answer == "2":
+        return {"claude-code"}
+    if answer == "3":
+        return {"codex", "claude-code"}
+    raise SystemExit("Cancelled.")
+
+
+def should_overwrite(path: Path, force: bool, interactive: bool) -> bool:
+    if not path.exists():
+        return True
+    if force:
+        return True
+    if not interactive:
+        raise SystemExit(f"Target already exists: {path}. Re-run with --force to replace it.")
+    answer = input(f"Replace existing skill at {path}? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def copy_skill(target: str, destination: Path, force: bool, dry_run: bool, interactive: bool) -> None:
+    src = source_skill_dir()
+    if not src.exists():
+        raise SystemExit(f"Missing source skill directory: {src}")
+
+    if dry_run:
+        action = "replace" if destination.exists() else "install"
+        print(f"[dry-run] {action} {target}: {src} -> {destination}")
+        return
+
+    if not should_overwrite(destination, force, interactive):
+        print(f"Skipped {target}: {destination}")
+        return
+
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    ignore = None
+    if target == "Claude Code":
+        ignore = shutil.ignore_patterns("agents")
+    shutil.copytree(src, destination, ignore=ignore)
+    print(f"Installed {target}: {destination}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Install the credit-card-bill-analysis skill for Codex and/or Claude Code."
+    )
+    targets = parser.add_mutually_exclusive_group()
+    targets.add_argument("--codex", action="store_true", help="Install only for Codex.")
+    targets.add_argument("--claude-code", action="store_true", help="Install only for Claude Code.")
+    targets.add_argument("--all", action="store_true", help="Install for both Codex and Claude Code.")
+    parser.add_argument("--codex-dir", type=Path, help="Exact Codex skill target directory.")
+    parser.add_argument("--claude-dir", type=Path, help="Exact Claude Code skill target directory.")
+    parser.add_argument("--force", action="store_true", help="Replace existing installed skill directories.")
+    parser.add_argument("--dry-run", action="store_true", help="Show actions without writing files.")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    interactive = sys.stdin.isatty() and not (args.codex or args.claude_code or args.all)
+    if args.codex:
+        selections = {"codex"}
+    elif args.claude_code:
+        selections = {"claude-code"}
+    elif args.all:
+        selections = {"codex", "claude-code"}
+    else:
+        selections = prompt_choice()
+        interactive = True
+
+    if "codex" in selections:
+        copy_skill(
+            "Codex",
+            (args.codex_dir or default_codex_skill_dir()).expanduser(),
+            args.force,
+            args.dry_run,
+            interactive,
+        )
+    if "claude-code" in selections:
+        copy_skill(
+            "Claude Code",
+            (args.claude_dir or default_claude_skill_dir()).expanduser(),
+            args.force,
+            args.dry_run,
+            interactive,
+        )
+
+
+if __name__ == "__main__":
+    main()

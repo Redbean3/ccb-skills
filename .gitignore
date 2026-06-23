@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Generated bill analysis outputs
+*_analysis/
+bill_analysis/
+report.html
+report.md
+category_pie.svg
+daily_spending.svg
+transactions_parsed.csv
+transactions_cleaned.csv
+
+# Private financial inputs and conversions
+*.pdf
+*账单*.md
+*statement*.md
+*bill*.md
+*.xlsx
+*.xls
+*.csv
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

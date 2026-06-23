@@ -1,0 +1,4 @@
+interface:
+  display_name: "Credit Card Bill Analysis"
+  short_description: "Analyze PDF credit card bills with refund-aware charts"
+  default_prompt: "Use $credit-card-bill-analysis to convert a credit card PDF bill to Markdown and generate refund-aware spending charts."
