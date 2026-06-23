@@ -12,7 +12,7 @@ A credit-card statement analysis skill for coding agents. CCB is short for Credi
 - Classify spending into categories such as `出行交通`, `食堂`, `其他饮食/食品商超`, `电商购物`, and more.
 - Generate `report.html` and CSV exports; the HTML dashboard supports clicking the category pie chart and daily spending chart to filter one unified transaction detail table.
 
-## Quickstart (30-Second Setup)
+## Quickstart
 
 ```bash
 npx inskills@latest add Redbean3/ccb-skills
@@ -30,22 +30,6 @@ After installation, ask your coding agent to use the skill:
 
 ```text
 Use $ccb to analyze this credit-card statement PDF.
-```
-
-## Migrating From The Old Name
-
-The old skill name was `credit-card-bill-analysis`. The new skill name is `ccb`. After reinstalling, the new directories are:
-
-```text
-${CODEX_HOME:-~/.codex}/skills/ccb
-${CLAUDE_HOME:-~/.claude}/skills/ccb
-```
-
-If you installed the old version, you can manually remove the old directories:
-
-```text
-${CODEX_HOME:-~/.codex}/skills/credit-card-bill-analysis
-${CLAUDE_HOME:-~/.claude}/skills/credit-card-bill-analysis
 ```
 
 ## Usage

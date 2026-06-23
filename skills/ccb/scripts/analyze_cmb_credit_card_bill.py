@@ -94,12 +94,25 @@ def infer_year(markdown: str, fallback: int | None) -> int:
     raise SystemExit("Could not infer statement year. Re-run with --year YYYY.")
 
 
-def infer_title(markdown: str, input_path: Path) -> str:
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if "信用卡对账单" in line or "Credit Card Statement" in line:
-            return line
-    return input_path.stem
+def infer_title(markdown: str, input_path: Path, fallback_year: int) -> str:
+    patterns = (
+        r"CMB Credit Card Statement \((\d{4})\.(\d{1,2})\)",
+        r"信用卡对账单.*?(\d{4})年\s*(\d{1,2})月",
+        r"账单.*?(\d{4})年\s*(\d{1,2})月",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, markdown, flags=re.S)
+        if match:
+            year, month = int(match.group(1)), int(match.group(2))
+            return f"{year}年{month:02d}月账单"
+
+    filename_match = re.search(r"(\d{4})年\s*(\d{1,2})月|(\d{4})[._-](\d{1,2})", input_path.stem)
+    if filename_match:
+        year = int(filename_match.group(1) or filename_match.group(3))
+        month = int(filename_match.group(2) or filename_match.group(4))
+        return f"{year}年{month:02d}月账单"
+
+    return f"{fallback_year}年账单"
 
 
 def parse_amount(text: str) -> Decimal | None:
@@ -324,24 +337,24 @@ def build_interactive_pie_svg(category_totals: dict[str, Decimal]) -> str:
     width, height = 920, 620
     cx, cy, radius = 295, 330, 205
     colors = [
-        "#2563EB",
-        "#3B82F6",
-        "#60A5FA",
-        "#93C5FD",
-        "#0EA5E9",
-        "#14B8A6",
-        "#16A34A",
-        "#F59E0B",
-        "#94A3B8",
-        "#CBD5E1",
+        "#8E6F72",
+        "#7A8A82",
+        "#8B8FA3",
+        "#B09A7F",
+        "#A87972",
+        "#6F7F8F",
+        "#9A8B67",
+        "#B7A6A0",
+        "#8A7C70",
+        "#C5C0B8",
     ]
     total = sum(category_totals.values(), Decimal("0"))
     start = -math.pi / 2
     svg: list[str] = [
         f'<svg class="category-chart-svg" xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="本期消费分类饼图，点击分类查看明细">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
-        '<text x="40" y="55" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#1f2933">本期消费分类饼图</text>',
-        f'<text x="40" y="90" font-size="16" font-family="Arial, sans-serif" fill="#52606d">剔除已匹配退款后的消费合计：¥{money(total)}</text>',
+        '<text x="40" y="55" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#303235">本期消费分类饼图</text>',
+        f'<text x="40" y="90" font-size="16" font-family="Arial, sans-serif" fill="#74706b">剔除已匹配退款后的消费合计：¥{money(total)}</text>',
     ]
 
     for index, (category, amount) in enumerate(category_totals.items()):
@@ -370,8 +383,8 @@ def build_interactive_pie_svg(category_totals: dict[str, Decimal]) -> str:
             [
                 f'<g class="category-legend" data-category="{category_attr}" tabindex="0" role="button" aria-label="{escape(label, quote=True)}">',
                 f'<rect x="{legend_x}" y="{y - 16}" width="18" height="18" rx="3" fill="{color}"/>',
-                f'<text x="{legend_x + 30}" y="{y}" font-size="16" font-family="Arial, sans-serif" fill="#1f2933">{escape(category)}</text>',
-                f'<text x="{legend_x + 30}" y="{y + 21}" font-size="14" font-family="Arial, sans-serif" fill="#52606d">¥{money(amount)} · {pct:.1f}%</text>',
+                f'<text x="{legend_x + 30}" y="{y}" font-size="16" font-family="Arial, sans-serif" fill="#303235">{escape(category)}</text>',
+                f'<text x="{legend_x + 30}" y="{y + 21}" font-size="14" font-family="Arial, sans-serif" fill="#74706b">¥{money(amount)} · {pct:.1f}%</text>',
                 "</g>",
             ]
         )
@@ -401,20 +414,44 @@ def build_interactive_daily_svg(daily_totals: dict[date, Decimal]) -> str:
     def y_at(amount: Decimal) -> float:
         return margin_top + chart_height - (float(amount) / float(y_max)) * chart_height
 
+    def smooth_line_path(points: list[tuple[float, float, date, Decimal]]) -> str:
+        if not points:
+            return ""
+        if len(points) == 1:
+            return f"M {points[0][0]:.2f} {points[0][1]:.2f}"
+
+        smoothness = 0.12
+
+        def clamp_y(value: float) -> float:
+            return min(max(value, margin_top), margin_top + chart_height)
+
+        path = [f"M {points[0][0]:.2f} {points[0][1]:.2f}"]
+        for index in range(len(points) - 1):
+            p0 = points[index - 1] if index > 0 else points[index]
+            p1 = points[index]
+            p2 = points[index + 1]
+            p3 = points[index + 2] if index + 2 < len(points) else p2
+            c1x = p1[0] + (p2[0] - p0[0]) * smoothness
+            c1y = clamp_y(p1[1] + (p2[1] - p0[1]) * smoothness)
+            c2x = p2[0] - (p3[0] - p1[0]) * smoothness
+            c2y = clamp_y(p2[1] - (p3[1] - p1[1]) * smoothness)
+            path.append(f"C {c1x:.2f} {c1y:.2f}, {c2x:.2f} {c2y:.2f}, {p2[0]:.2f} {p2[1]:.2f}")
+        return " ".join(path)
+
     svg: list[str] = [
         f'<svg class="daily-chart-svg" xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="每日消费金额，点击日期查看明细">',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
-        '<text x="40" y="52" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#1f2933">每日消费金额</text>',
-        '<text x="40" y="80" font-size="16" font-family="Arial, sans-serif" fill="#52606d">按交易日汇总，已剔除可匹配退款对应账目</text>',
+        '<text x="40" y="52" font-size="28" font-family="Arial, sans-serif" font-weight="700" fill="#303235">每日消费金额</text>',
+        '<text x="40" y="80" font-size="16" font-family="Arial, sans-serif" fill="#74706b">按交易日汇总，已剔除可匹配退款对应账目</text>',
     ]
 
     for tick in range(6):
         amount = y_max * Decimal(tick) / Decimal(5)
         y = y_at(amount)
-        svg.append(f'<line x1="{margin_left}" y1="{y:.2f}" x2="{width - margin_right}" y2="{y:.2f}" stroke="#e4e7eb" stroke-width="1"/>')
-        svg.append(f'<text x="{margin_left - 12}" y="{y + 5:.2f}" font-size="12" font-family="Arial, sans-serif" text-anchor="end" fill="#52606d">{money(amount)}</text>')
+        svg.append(f'<line x1="{margin_left}" y1="{y:.2f}" x2="{width - margin_right}" y2="{y:.2f}" stroke="#e7e2dc" stroke-width="1"/>')
+        svg.append(f'<text x="{margin_left - 12}" y="{y + 5:.2f}" font-size="12" font-family="Arial, sans-serif" text-anchor="end" fill="#74706b">{money(amount)}</text>')
 
-    line_points: list[tuple[str, str, date, Decimal]] = []
+    line_points: list[tuple[float, float, date, Decimal]] = []
     for index, (day, amount) in enumerate(items):
         x = x_at(index)
         y = y_at(amount)
@@ -428,19 +465,19 @@ def build_interactive_daily_svg(daily_totals: dict[date, Decimal]) -> str:
         )
         svg.append(
             f'<rect {data_attrs} x="{x - bar_width / 2:.2f}" y="{y:.2f}" width="{bar_width:.2f}" height="{bar_height:.2f}" '
-            'fill="#4E79A7" opacity="0.82">'
+            'fill="#8E6F72" opacity="0.84">'
             f"<title>{escape(label)}</title></rect>"
         )
-        line_points.append((f"{x:.2f}", f"{y:.2f}", day, amount))
+        line_points.append((x, y, day, amount))
         if index % 2 == 0 or index == count - 1:
             svg.append(
                 f'<text x="{x:.2f}" y="{height - 52}" font-size="12" font-family="Arial, sans-serif" '
-                f'text-anchor="middle" fill="#52606d" transform="rotate(-35 {x:.2f} {height - 52})">{day.strftime("%m/%d")}</text>'
+                f'text-anchor="middle" fill="#74706b" transform="rotate(-35 {x:.2f} {height - 52})">{day.strftime("%m/%d")}</text>'
             )
 
     if line_points:
         svg.append(
-            f'<polyline points="{" ".join(f"{x},{y}" for x, y, _, _ in line_points)}" fill="none" stroke="#0EA5E9" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<path d="{smooth_line_path(line_points)}" fill="none" stroke="#6F7F8F" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'
         )
         for x, y, day, amount in line_points:
             label = f"{day.strftime('%m/%d')} {html_money(amount)}"
@@ -451,18 +488,18 @@ def build_interactive_daily_svg(daily_totals: dict[date, Decimal]) -> str:
                 else 'class="daily-dot empty"'
             )
             svg.append(
-                f'<circle {data_attrs} cx="{x}" cy="{y}" r="3.2" fill="#0EA5E9" stroke="#ffffff" stroke-width="1.5">'
+                f'<circle {data_attrs} cx="{x:.2f}" cy="{y:.2f}" r="3.2" fill="#6F7F8F" stroke="#ffffff" stroke-width="1.5">'
                 f"<title>{escape(label)}</title></circle>"
             )
 
     svg.extend(
         [
-            f'<line x1="{margin_left}" y1="{margin_top + chart_height}" x2="{width - margin_right}" y2="{margin_top + chart_height}" stroke="#9aa5b1"/>',
-            f'<line x1="{margin_left}" y1="{margin_top}" x2="{margin_left}" y2="{margin_top + chart_height}" stroke="#9aa5b1"/>',
-            '<rect x="920" y="36" width="18" height="12" fill="#4E79A7" opacity="0.82"/>',
-            '<text x="945" y="47" font-size="14" font-family="Arial, sans-serif" fill="#52606d">柱：日消费额</text>',
-            '<line x1="920" y1="70" x2="938" y2="70" stroke="#0EA5E9" stroke-width="3"/>',
-            '<text x="945" y="75" font-size="14" font-family="Arial, sans-serif" fill="#52606d">线：趋势</text>',
+            f'<line x1="{margin_left}" y1="{margin_top + chart_height}" x2="{width - margin_right}" y2="{margin_top + chart_height}" stroke="#a9a39a"/>',
+            f'<line x1="{margin_left}" y1="{margin_top}" x2="{margin_left}" y2="{margin_top + chart_height}" stroke="#a9a39a"/>',
+            '<rect x="920" y="36" width="18" height="12" fill="#8E6F72" opacity="0.84"/>',
+            '<text x="945" y="47" font-size="14" font-family="Arial, sans-serif" fill="#74706b">柱：日消费额</text>',
+            '<line x1="920" y1="70" x2="938" y2="70" stroke="#6F7F8F" stroke-width="3"/>',
+            '<text x="945" y="75" font-size="14" font-family="Arial, sans-serif" fill="#74706b">线：趋势</text>',
             "</svg>",
         ]
     )
@@ -560,53 +597,58 @@ def write_interactive_html(
   <title>{escape(title)}分析</title>
   <style>
     :root {{
-      --bg:#f6f8fb;
+      --bg:#f5f3f0;
       --surface:#ffffff;
-      --surface-muted:#f9fafb;
-      --ink:#111827;
-      --muted:#667085;
-      --line:#e5e7eb;
-      --primary:#2563eb;
-      --primary-soft:#eff6ff;
-      --success:#16a34a;
-      --warning:#f59e0b;
-      --danger:#dc2626;
-      --info:#0ea5e9;
-      --shadow:0 10px 30px rgba(15,23,42,.06);
+      --surface-muted:#f8f6f3;
+      --ink:#303235;
+      --muted:#74706b;
+      --line:#e7e2dc;
+      --primary:#8e6f72;
+      --primary-strong:#72595e;
+      --primary-soft:#f4eeee;
+      --success:#7a8a82;
+      --warning:#b09a7f;
+      --danger:#a87972;
+      --info:#6f7f8f;
+      --shadow:0 14px 34px rgba(48,50,53,.07);
       --radius:8px;
     }}
     * {{ box-sizing:border-box; }}
     html {{ scroll-behavior:smooth; }}
     body {{ margin:0; color:var(--ink); background:var(--bg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.5; }}
     button, input {{ font-family:inherit; }}
-    .app-shell {{ min-height:100vh; display:grid; grid-template-columns:256px minmax(0,1fr); transition:grid-template-columns .18s ease; }}
-    .app-shell.sidebar-collapsed {{ grid-template-columns:76px minmax(0,1fr); }}
-    .sidebar {{ position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:24px; padding:16px; border-right:1px solid var(--line); background:var(--surface); z-index:20; }}
-    .brand {{ display:grid; grid-template-columns:40px minmax(0,1fr) 36px; gap:10px; align-items:center; }}
-    .brand-mark {{ width:40px; height:40px; display:grid; place-items:center; border-radius:var(--radius); background:var(--primary); color:#fff; font-size:13px; font-weight:800; letter-spacing:0; }}
+    .app-shell {{ min-height:100vh; display:flex; }}
+    .sidebar {{ position:sticky; top:0; height:100vh; width:256px; flex:0 0 256px; display:flex; flex-direction:column; gap:24px; padding:16px; overflow:hidden; border-right:1px solid var(--line); background:var(--surface); z-index:20; transition:width .18s ease, flex-basis .18s ease; }}
+    .app-shell.sidebar-collapsed .sidebar {{ width:76px; flex-basis:76px; }}
+    .brand {{ display:grid; grid-template-columns:40px minmax(0,1fr) 32px; gap:10px; align-items:center; }}
+    .brand-mark {{ width:40px; height:40px; display:grid; place-items:center; padding:0; border:0; border-radius:var(--radius); background:var(--primary); color:#fff; font-size:13px; font-weight:800; letter-spacing:0; appearance:none; }}
+    .brand-mark:disabled {{ opacity:1; cursor:default; }}
     .brand-title {{ margin:0; font-size:15px; font-weight:750; line-height:1.2; }}
     .brand-subtitle {{ margin:2px 0 0; color:var(--muted); font-size:12px; }}
-    .sidebar-toggle {{ width:36px; height:36px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; color:var(--muted); cursor:pointer; }}
+    .sidebar-toggle {{ width:32px; height:32px; display:grid; place-items:center; border:1px solid var(--line); border-radius:var(--radius); background:#fff; color:var(--muted); cursor:pointer; font-size:20px; line-height:1; }}
     .side-nav {{ display:grid; gap:6px; }}
     .side-nav a {{ display:flex; align-items:center; gap:10px; min-height:36px; padding:8px 10px; border-radius:var(--radius); color:var(--muted); font-size:14px; text-decoration:none; }}
     .side-nav a:hover {{ background:var(--primary-soft); color:var(--primary); }}
     .nav-dot {{ width:8px; height:8px; border-radius:999px; border:2px solid currentColor; flex:0 0 auto; opacity:.7; }}
     .sidebar-note {{ margin-top:auto; padding:12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface-muted); color:var(--muted); font-size:12px; }}
+    .brand-text, .nav-label, .sidebar-note, .sidebar-toggle {{ transition:opacity .12s ease; }}
+    .sidebar-expanding .brand-text, .sidebar-expanding .nav-label, .sidebar-expanding .sidebar-note, .sidebar-expanding .sidebar-toggle {{ opacity:0; pointer-events:none; }}
     .sidebar-collapsed .brand-text, .sidebar-collapsed .nav-label, .sidebar-collapsed .sidebar-note {{ display:none; }}
-    .sidebar-collapsed .brand {{ grid-template-columns:40px; }}
+    .sidebar-collapsed .brand {{ grid-template-columns:40px; justify-content:center; gap:10px; }}
+    .sidebar-collapsed .brand-mark {{ cursor:pointer; }}
     .sidebar-collapsed .sidebar-toggle {{ display:none; }}
     .content-shell {{ min-width:0; }}
-    .topbar {{ position:sticky; top:0; z-index:12; display:flex; justify-content:space-between; gap:24px; align-items:center; padding:24px 32px; border-bottom:1px solid var(--line); background:rgba(246,248,251,.92); backdrop-filter:blur(14px); }}
-    h1 {{ margin:0; font-size:30px; line-height:1.18; letter-spacing:0; }}
-    .subtitle {{ margin:6px 0 0; color:var(--muted); max-width:820px; font-size:14px; }}
+    .topbar {{ position:sticky; top:0; z-index:12; display:flex; justify-content:space-between; gap:18px; align-items:center; padding:16px 24px; border-bottom:1px solid var(--line); background:rgba(245,243,240,.94); backdrop-filter:blur(14px); }}
+    h1 {{ margin:0; font-size:24px; line-height:1.18; letter-spacing:0; }}
+    .subtitle {{ margin:4px 0 0; color:var(--muted); max-width:760px; font-size:13px; }}
     .topbar-actions {{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }}
-    .button {{ display:inline-flex; align-items:center; min-height:36px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); color:var(--ink); background:#fff; font-size:14px; text-decoration:none; box-shadow:0 1px 2px rgba(15,23,42,.04); }}
+    .button {{ display:inline-flex; align-items:center; min-height:36px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); color:var(--ink); background:#fff; font-size:14px; text-decoration:none; box-shadow:0 1px 2px rgba(48,50,53,.04); }}
     .button.primary {{ border-color:var(--primary); background:var(--primary); color:#fff; }}
-    .dashboard-grid {{ display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:24px; padding:24px 32px 40px; }}
+    .dashboard-grid {{ display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:24px; padding:20px 24px 40px; }}
     .dashboard-card, .kpi-card {{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }}
     .kpi-row {{ grid-column:1 / -1; display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:16px; }}
     .kpi-card {{ grid-column:span 3; min-height:124px; padding:20px; }}
-    .kpi-card.primary {{ border-color:#bfdbfe; background:linear-gradient(180deg,#fff,#f8fbff); }}
+    .kpi-card.primary {{ border-color:#e4d6d6; background:linear-gradient(180deg,#ffffff,#fbf7f6); }}
     .kpi-card.refund {{ border-left:4px solid var(--danger); }}
     .kpi-card.net {{ border-left:4px solid var(--success); }}
     .kpi-card.day {{ border-left:4px solid var(--warning); }}
@@ -627,42 +669,45 @@ def write_interactive_html(
     .chart img, .chart svg {{ display:block; width:100%; min-width:520px; height:auto; }}
     .category-slice, .category-legend, .daily-bar, .daily-dot {{ cursor:pointer; }}
     .category-slice {{ transition:opacity .14s ease, transform .14s ease; transform-box:fill-box; transform-origin:center; }}
-    .category-slice:hover, .category-slice.active {{ opacity:.92; transform:scale(1.018); stroke:#1d4ed8; stroke-width:3; }}
+    .category-slice:focus, .category-legend:focus, .daily-bar:focus, .daily-dot:focus {{ outline:none; }}
+    .category-slice:hover, .category-slice.active {{ opacity:.97; transform:scale(1.012); stroke:#ffffff; stroke-width:2; filter:drop-shadow(0 4px 8px rgba(142,111,114,.16)); }}
     .category-legend.active text:first-of-type {{ font-weight:700; fill:var(--primary); }}
     .category-legend:hover text:first-of-type {{ fill:var(--primary); }}
-    .daily-bar:not(.empty):hover, .daily-bar.active {{ fill:var(--primary); opacity:1; }}
-    .daily-dot:not(.empty):hover, .daily-dot.active {{ fill:var(--primary); }}
+    .daily-bar:not(.empty):hover, .daily-bar.active {{ fill:var(--primary-strong); opacity:1; }}
+    .daily-dot:not(.empty):hover, .daily-dot.active {{ fill:var(--primary-strong); stroke:#ffffff; }}
     .empty-state {{ color:var(--muted); padding:14px; }}
     .empty-chart {{ min-width:520px; padding:32px; color:var(--muted); }}
     .wrap {{ overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); }}
     table {{ width:100%; border-collapse:collapse; font-size:14px; }}
     th, td {{ border-bottom:1px solid var(--line); padding:12px 14px; text-align:left; vertical-align:top; }}
-    tr:hover td {{ background:#f8fbff; }}
+    tr:hover td {{ background:#faf8f5; }}
     th {{ color:#344054; background:var(--surface-muted); font-size:12px; font-weight:750; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; user-select:none; }}
     th[data-sort] {{ cursor:pointer; }} td[data-value], .num {{ text-align:right; }}
     .toolbar {{ display:flex; justify-content:space-between; gap:16px; align-items:center; margin:0 0 16px; flex-wrap:wrap; }}
     .filters {{ display:flex; flex-wrap:wrap; gap:8px; }}
     .filter-chip, .ghost {{ border:1px solid var(--line); border-radius:var(--radius); background:#fff; color:var(--ink); font:inherit; font-size:14px; padding:8px 10px; }}
-    .filter-chip.active {{ border-color:var(--primary); background:var(--primary-soft); color:var(--primary); }}
+    .filter-chip.active {{ border-color:#e4d6d6; background:var(--primary-soft); color:var(--primary-strong); }}
     .filter-chip:not(.active) {{ color:var(--muted); }}
     .ghost {{ cursor:pointer; }}
     .ghost:disabled {{ opacity:.46; cursor:not-allowed; }}
     .search {{ min-width:280px; border:1px solid var(--line); border-radius:var(--radius); padding:9px 11px; font:inherit; font-size:14px; background:#fff; }}
-    .search:focus {{ outline:2px solid #bfdbfe; border-color:var(--primary); }}
+    button:focus, a:focus, input:focus {{ outline:none; }}
+    button:focus-visible, a:focus-visible, input:focus-visible {{ outline:2px solid rgba(142,111,114,.24); outline-offset:2px; }}
+    .search:focus {{ border-color:#e4d6d6; box-shadow:0 0 0 3px rgba(142,111,114,.10); }}
     .detail-title {{ margin:0; font-size:18px; font-weight:750; }} .detail-meta {{ color:var(--muted); font-size:14px; }}
     details {{ border:1px solid var(--line); border-radius:var(--radius); background:var(--surface-muted); margin-top:14px; }}
     summary {{ cursor:pointer; padding:13px 15px; font-weight:700; }} .details-body {{ padding:0 15px 15px; }}
-    .callout {{ border-left:4px solid var(--warning); background:#fff8e8; padding:12px 14px; border-radius:var(--radius); color:#7a4b00; margin:0 0 16px; font-size:14px; }}
+    .callout {{ border-left:4px solid var(--warning); background:#fbf6ed; padding:12px 14px; border-radius:var(--radius); color:#6f5636; margin:0 0 16px; font-size:14px; }}
     .links {{ display:flex; gap:10px; flex-wrap:wrap; }} .links a {{ color:var(--primary); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; text-decoration:none; background:#fff; font-size:14px; }}
-    @media (max-width:1180px) {{ .app-shell {{ grid-template-columns:76px minmax(0,1fr); }} .brand-text, .nav-label, .sidebar-note {{ display:none; }} .brand {{ grid-template-columns:40px; }} .sidebar-toggle {{ display:none; }} .kpi-card {{ grid-column:span 6; }} .category-card,.trend-card,.table-card,.activity-stack {{ grid-column:1 / -1; }} }}
-    @media (max-width:720px) {{ .app-shell {{ display:block; }} .sidebar {{ position:static; height:auto; flex-direction:row; align-items:center; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line); }} .side-nav {{ display:flex; }} .brand-text,.sidebar-note {{ display:none; }} .content-shell {{ min-width:0; }} .topbar {{ display:block; padding:20px 16px; }} .topbar-actions {{ justify-content:flex-start; margin-top:16px; }} .dashboard-grid {{ padding:16px; gap:16px; }} .kpi-row {{ gap:12px; }} .kpi-card {{ grid-column:1 / -1; }} h1 {{ font-size:24px; }} .card-head,.card-body {{ padding-left:16px; padding-right:16px; }} .value,.kpi-card.primary .value {{ font-size:24px; }} table {{ font-size:13px; }} .search {{ min-width:100%; }} }}
+    @media (max-width:1180px) {{ .kpi-card {{ grid-column:span 6; }} .category-card,.trend-card,.table-card,.activity-stack {{ grid-column:1 / -1; }} }}
+    @media (max-width:720px) {{ .app-shell {{ display:block; }} .sidebar {{ position:static; width:auto; flex-basis:auto; height:auto; flex-direction:row; align-items:center; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line); }} .side-nav {{ display:flex; }} .brand-text,.sidebar-note,.sidebar-toggle {{ display:none; }} .content-shell {{ min-width:0; }} .topbar {{ display:block; padding:14px 16px; }} .topbar-actions {{ justify-content:flex-start; margin-top:12px; }} .dashboard-grid {{ padding:16px; gap:16px; }} .kpi-row {{ gap:12px; }} .kpi-card {{ grid-column:1 / -1; }} h1 {{ font-size:22px; }} .card-head,.card-body {{ padding-left:16px; padding-right:16px; }} .value,.kpi-card.primary .value {{ font-size:24px; }} table {{ font-size:13px; }} .search {{ min-width:100%; }} }}
   </style>
 </head>
 <body>
   <div class="app-shell" id="app-shell">
     <aside class="sidebar" aria-label="报告导航">
       <div class="brand">
-        <div class="brand-mark">CCB</div>
+        <button type="button" class="brand-mark" id="brand-mark" aria-label="账单分析标识" disabled>CCB</button>
         <div class="brand-text"><p class="brand-title">账单分析</p><p class="brand-subtitle">本地离线仪表盘</p></div>
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="折叠侧边栏">&lsaquo;</button>
       </div>
@@ -718,7 +763,15 @@ def write_interactive_html(
     document.querySelector("#category-filter")?.addEventListener("click", () => {{ state.category = ""; renderDashboard(); }});
     document.querySelector("#day-filter")?.addEventListener("click", () => {{ state.day = ""; renderDashboard(); }});
     document.querySelector("#clear-filters")?.addEventListener("click", () => {{ state.category = ""; state.day = ""; state.search = ""; document.querySelector("#detail-search").value = ""; renderDashboard(); }});
-    document.querySelector("#sidebar-toggle")?.addEventListener("click", () => document.querySelector("#app-shell")?.classList.toggle("sidebar-collapsed"));
+    const appShell = document.querySelector("#app-shell");
+    const sidebarToggle = document.querySelector("#sidebar-toggle");
+    const brandMark = document.querySelector("#brand-mark");
+    function syncSidebarControls() {{ if (!appShell || !sidebarToggle || !brandMark) return; const collapsed = appShell.classList.contains("sidebar-collapsed"); sidebarToggle.setAttribute("aria-label", "折叠侧边栏"); brandMark.disabled = !collapsed; brandMark.setAttribute("aria-label", collapsed ? "展开侧边栏" : "账单分析标识"); }}
+    function collapseSidebar() {{ appShell?.classList.remove("sidebar-expanding"); appShell?.classList.add("sidebar-collapsed"); syncSidebarControls(); }}
+    function expandSidebar() {{ if (!appShell) return; appShell.classList.add("sidebar-expanding"); appShell.classList.remove("sidebar-collapsed"); syncSidebarControls(); window.setTimeout(() => appShell.classList.remove("sidebar-expanding"), 190); }}
+    sidebarToggle?.addEventListener("click", collapseSidebar);
+    brandMark?.addEventListener("click", expandSidebar);
+    syncSidebarControls();
     bindSorting();
     renderDashboard();
   </script>
@@ -731,7 +784,7 @@ def write_interactive_html(
 def analyze(input_path: Path, out_dir: Path, year: int | None) -> None:
     markdown = input_path.read_text(encoding="utf-8")
     statement_year = infer_year(markdown, year)
-    title = infer_title(markdown, input_path)
+    title = infer_title(markdown, input_path, statement_year)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     transactions = parse_transactions(markdown, statement_year)

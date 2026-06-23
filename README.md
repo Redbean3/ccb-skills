@@ -12,7 +12,7 @@
 - 将消费归类到 `出行交通`、`食堂`、`其他饮食/食品商超`、`电商购物` 等类别。
 - 生成 `report.html` 和 CSV 明细；HTML 仪表盘支持点击分类饼图和每日消费图表筛选同一张消费明细表。
 
-## Quickstart（30 秒安装）
+## Quickstart
 
 ```bash
 npx inskills@latest add Redbean3/ccb-skills
@@ -30,22 +30,6 @@ npx inskills@latest add Redbean3/ccb-skills --all
 
 ```text
 Use $ccb to analyze this credit-card statement PDF.
-```
-
-## 从旧名称迁移
-
-旧 skill 名是 `credit-card-bill-analysis`，新名称是 `ccb`。重新安装后，新目录会是：
-
-```text
-${CODEX_HOME:-~/.codex}/skills/ccb
-${CLAUDE_HOME:-~/.claude}/skills/ccb
-```
-
-如果你之前安装过旧版本，可以手动删除旧目录：
-
-```text
-${CODEX_HOME:-~/.codex}/skills/credit-card-bill-analysis
-${CLAUDE_HOME:-~/.claude}/skills/credit-card-bill-analysis
 ```
 
 ## 使用
