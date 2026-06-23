@@ -1,6 +1,6 @@
 ---
 name: ccb
-description: Analyze Chinese credit card statement PDFs, especially招商银行/CMB账单, by converting PDFs with uv/MarkItDown, parsing transaction details, matching and excluding refunded purchases, classifying spending, and generating Markdown reports, SVG pie/daily charts, and CSV transaction exports. Use when the user asks to analyze a credit-card bill,账单, PDF statement, refund-aware消费分类, spending pie chart, or daily spending chart.
+description: Analyze Chinese credit card statement PDFs, especially招商银行/CMB账单, by converting PDFs with uv/MarkItDown, parsing transaction details, matching and excluding refunded purchases, classifying spending, and generating an interactive HTML dashboard plus CSV transaction exports. Use when the user asks to analyze a credit-card bill,账单, PDF statement, refund-aware消费分类, spending pie chart, daily spending chart, or interactive bill report.
 ---
 
 # CCB (Credit Card Bill)
@@ -24,7 +24,7 @@ If `uv` is missing, install it only after approval. Prefer the official Astral i
 python3 scripts/analyze_cmb_credit_card_bill.py 'statement.md'
 ```
 
-Use `--out <dir>` to choose the output directory, `--year YYYY` when the statement year cannot be inferred, and `--top-categories N` to change how many top category detail sections are included in `report.md`. The HTML report always includes interactive detail filters for every category.
+Use `--out <dir>` to choose the output directory and `--year YYYY` when the statement year cannot be inferred. The HTML report includes interactive detail filters for every category and spending date.
 
 4. Open or summarize the generated report. Do not paste full sensitive transaction details into chat unless the user explicitly asks.
 
@@ -62,10 +62,7 @@ If the user disputes a category, patch `CATEGORY_RULES` or the `categorize()` fu
 
 The script writes:
 
-- `report.md`: Chinese Markdown analysis report.
-- `report.html`: interactive Chinese HTML report with summary cards, clickable category/daily charts, sortable tables, category detail tabs, search, and collapsible refund sections.
-- `category_pie.svg`: refund-aware category pie chart.
-- `daily_spending.svg`: daily spending bar+line chart.
+- `report.html`: interactive Chinese HTML dashboard with summary cards, clickable category/daily charts, one unified transaction detail table, search, sorting, and collapsible refund sections.
 - `transactions_parsed.csv`: all parsed rows with section and exclusion metadata.
 - `transactions_cleaned.csv`: positive spending rows after matched-refund exclusions.
 
@@ -75,8 +72,6 @@ After script changes, run:
 
 ```bash
 python3 -m py_compile scripts/analyze_cmb_credit_card_bill.py
-python3 -m xml.etree.ElementTree '<out>/category_pie.svg'
-python3 -m xml.etree.ElementTree '<out>/daily_spending.svg'
 ```
 
 When a statement contains a visible本期应还金额, sanity-check whether `净账单口径` equals or explains the statement balance.

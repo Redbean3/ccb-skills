@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 简体中文
 
-面向 Coding Agent 的信用卡账单分析 skill。CCB 是 Credit Card Bill 的缩写，表示信用卡账单。它帮助 Codex 或 Claude Code 将中文信用卡 PDF 账单转换为 Markdown，解析交易明细，剔除已退款对应账目，并生成消费分类、每日消费趋势、交互式 HTML 报告和 CSV 明细。
+面向 Coding Agent 的信用卡账单分析 skill。CCB 是 Credit Card Bill 的缩写，表示信用卡账单。它帮助 Codex 或 Claude Code 将中文信用卡 PDF 账单转换为 Markdown，解析交易明细，剔除已退款对应账目，并生成消费分类、每日消费趋势、交互式 HTML 仪表盘和 CSV 明细。
 
 ## 功能
 
@@ -10,7 +10,7 @@
 - 解析 CMB/招商银行风格的账单分区：`还款`、`分期`、`退款`、`消费`。
 - 将同金额退款匹配到更早的正向交易，并从消费图表中剔除对应消费。
 - 将消费归类到 `出行交通`、`食堂`、`其他饮食/食品商超`、`电商购物` 等类别。
-- 生成 `report.html`、`report.md`、SVG 图表和 CSV 明细；HTML 报告支持点击分类饼图和每日消费图表筛选明细。
+- 生成 `report.html` 和 CSV 明细；HTML 仪表盘支持点击分类饼图和每日消费图表筛选同一张消费明细表。
 
 ## Quickstart（30 秒安装）
 
@@ -70,10 +70,7 @@ python3 scripts/analyze_cmb_credit_card_bill.py statement.md
 
 | 文件 | 说明 |
 | --- | --- |
-| `report.html` | 交互式 HTML 报告，包含指标卡、可点击图表、可排序表格、分类明细切换、搜索和可折叠退款分区。 |
-| `report.md` | Markdown 报告。 |
-| `category_pie.svg` | 消费分类饼图。 |
-| `daily_spending.svg` | 每日消费柱状/折线图。 |
+| `report.html` | 交互式 HTML 仪表盘，包含指标卡、可点击图表、统一消费明细、搜索、排序和可折叠退款分区。 |
 | `transactions_parsed.csv` | 完整解析明细。 |
 | `transactions_cleaned.csv` | 剔除已匹配退款后的消费明细。 |
 
@@ -100,7 +97,7 @@ python3 scripts/analyze_cmb_credit_card_bill.py statement.md
 
 本仓库不包含任何真实账单 PDF、转换后的账单文本、分析报告或交易数据。
 
-不要提交真实账单 PDF、转换后的 Markdown、生成的 HTML/Markdown 报告或 CSV 明细。仓库里的 `.gitignore` 已屏蔽该工作流常见的输入和输出文件。
+不要提交真实账单 PDF、转换后的 Markdown、生成的 HTML 报告或 CSV 明细。仓库里的 `.gitignore` 已屏蔽该工作流常见的输入和输出文件。
 
 ## 环境要求
 

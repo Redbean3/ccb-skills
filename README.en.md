@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-A credit-card statement analysis skill for coding agents. CCB is short for Credit Card Bill. It helps Codex or Claude Code convert Chinese credit-card statement PDFs to Markdown, parse transaction details, exclude refunded purchases, and generate spending categories, daily spending trends, an interactive HTML report, and CSV exports.
+A credit-card statement analysis skill for coding agents. CCB is short for Credit Card Bill. It helps Codex or Claude Code convert Chinese credit-card statement PDFs to Markdown, parse transaction details, exclude refunded purchases, and generate spending categories, daily spending trends, an interactive HTML dashboard, and CSV exports.
 
 ## Features
 
@@ -10,7 +10,7 @@ A credit-card statement analysis skill for coding agents. CCB is short for Credi
 - Parse CMB-style sections: `还款`, `分期`, `退款`, and `消费`.
 - Match equal-amount refunds to earlier positive transactions and exclude the matched charge from spending charts.
 - Classify spending into categories such as `出行交通`, `食堂`, `其他饮食/食品商超`, `电商购物`, and more.
-- Generate `report.html`, `report.md`, SVG charts, and CSV exports; the HTML report supports clicking the category pie chart and daily spending chart to filter details.
+- Generate `report.html` and CSV exports; the HTML dashboard supports clicking the category pie chart and daily spending chart to filter one unified transaction detail table.
 
 ## Quickstart (30-Second Setup)
 
@@ -70,10 +70,7 @@ python3 scripts/analyze_cmb_credit_card_bill.py statement.md
 
 | File | Description |
 | --- | --- |
-| `report.html` | Interactive HTML report with summary cards, clickable charts, sortable tables, category detail tabs, search, and collapsible refund sections. |
-| `report.md` | Markdown report. |
-| `category_pie.svg` | Category pie chart. |
-| `daily_spending.svg` | Daily spending bar/line chart. |
+| `report.html` | Interactive HTML dashboard with summary cards, clickable charts, unified transaction details, search, sorting, and collapsible refund sections. |
 | `transactions_parsed.csv` | Full parsed transaction export. |
 | `transactions_cleaned.csv` | Cleaned spending export after matched-refund exclusions. |
 
@@ -100,7 +97,7 @@ python3 scripts/analyze_cmb_credit_card_bill.py statement.md
 
 This repository intentionally contains no real statement PDFs, converted statement text, generated reports, or transaction data.
 
-Do not commit real statement PDFs, converted Markdown files, generated HTML/Markdown reports, or CSV exports. The `.gitignore` blocks common inputs and outputs created by this workflow.
+Do not commit real statement PDFs, converted Markdown files, generated HTML reports, or CSV exports. The `.gitignore` blocks common inputs and outputs created by this workflow.
 
 ## Requirements
 
